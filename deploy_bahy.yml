@@ -1,0 +1,25 @@
+---
+- name: Deployment Otomatis Web Parkir Bahy
+  hosts: vm2
+  become: yes
+  tasks:
+    - name: Install dependencies (Git, Docker, Compose)
+      apt:
+        name: ['git', 'docker.io', 'docker-compose-v2']
+        state: present
+        update_cache: yes
+
+    - name: Clone Repo Parkir dari GitHub
+      git:
+        repo: 'https://github.com/kucinggoreng-sys/parkir'
+        dest: /opt/parkir_bahy
+        version: main
+        force: yes
+
+    - name: Build dan Jalankan Docker Compose (Scaling Nginx 3 Replika)
+      community.docker.docker_compose_v2:
+        project_src: /opt/parkir_bahy
+        state: present
+        build: always
+        scale:
+          nginx_bahy: 3
