@@ -1,25 +1,46 @@
 ---
-- name: Deployment Otomatis Web Parkir Bahy
+- name: Deployment 100 Persen Otomatis Tanpa Menyentuh VM2
   hosts: vm2
   become: yes
   tasks:
-    - name: Install dependencies (Git, Docker, Compose)
-      apt:
-        name: ['git', 'docker.io', 'docker-compose-v2']
-        state: present
-        update_cache: yes
 
-    - name: Clone Repo Parkir dari GitHub
+    - name: 1. Clone Repo Parkir dari GitHub
       git:
-        repo: 'https://github.com/kucinggoreng-sys/parkir'
+        repo: 'https://github.com/kucinggoreng-sys/parkir.git'
         dest: /opt/parkir_bahy
         version: main
         force: yes
 
-    - name: Build dan Jalankan Docker Compose (Scaling Nginx 3 Replika)
-      community.docker.docker_compose_v2:
-        project_src: /opt/parkir_bahy
-        state: present
-        build: always
-        scale:
-          nginx_bahy: 3
+    - name: 2. Copy .env.example menjadi .env di VM2
+      copy:
+        src: /opt/parkir_bahy/.env.example
+        dest: /opt/parkir_bahy/.env
+        remote_src: yes
+
+    - name: 3. Konfigurasi Konfigurasi Database di file .env
+      lineinfile:
+        path: /opt/parkir_bahy/.env
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^DB_HOST=', line: 'DB_HOST=db_bahy' }
+        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=db_parkir_bahy' }
+        - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD=rahasia_bahy' }
+
+    - name: 4. Build dan Jalankan Docker Compose (3 Replika Nginx)
+      shell: "bash -lc 'docker compose up -d --scale nginx_bahy=3 --build'"
+      args:
+        chdir: /opt/parkir_bahy
+
+    - name: 5. Copy file .env dari VM2 ke dalam Kontainer App
+      shell: "bash -lc 'docker cp /opt/parkir_bahy/.env parkir_bahy-app_bahy-1:/var/www/.env'"
+
+    - name: 6. Jalankan php artisan key:generate di Kontainer
+      shell: "bash -lc 'docker exec parkir_bahy-app_bahy-1 php artisan key:generate'"
+
+    - name: 7. Jeda 10 detik menunggu MySQL siap
+      pause:
+        seconds: 10
+
+    - name: 8. Jalankan Migrasi dan Seed Database
+      shell: "bash -lc 'docker exec parkir_bahy-app_bahy-1 php artisan migrate:fresh --seed'"
