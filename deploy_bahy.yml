@@ -1,46 +1,42 @@
 ---
-- name: Deployment 100 Persen Otomatis Tanpa Menyentuh VM2
+- name: Deployment Otomatis Bahy - SIJA Kelas XI
   hosts: vm2
   become: yes
   tasks:
+    # FASE 1: INSTALASI
+    - name: 1. Update & Install Docker
+      apt: { name: [docker.io, docker-compose-v2], state: present, update_cache: yes }
 
-    - name: 1. Clone Repo Parkir dari GitHub
+    # FASE 2: SETUP REPO
+    - name: 2. Clone Repository
       git:
         repo: 'https://github.com/kucinggoreng-sys/parkir.git'
         dest: /opt/parkir_bahy
-        version: main
         force: yes
 
-    - name: 2. Copy .env.example menjadi .env di VM2
-      copy:
-        src: /opt/parkir_bahy/.env.example
-        dest: /opt/parkir_bahy/.env
-        remote_src: yes
+    # FASE 3: KONFIGURASI OTOMATIS (Sesuai Indikator 1 & 2)
+    - name: 3. Setup .env
+      copy: { src: /opt/parkir_bahy/.env.example, dest: /opt/parkir_bahy/.env, remote_src: yes }
 
-    - name: 3. Konfigurasi Konfigurasi Database di file .env
-      lineinfile:
-        path: /opt/parkir_bahy/.env
-        regexp: "{{ item.regexp }}"
-        line: "{{ item.line }}"
-      loop:
-        - { regexp: '^DB_HOST=', line: 'DB_HOST=db_bahy' }
-        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=db_parkir_bahy' }
-        - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD=rahasia_bahy' }
+    - name: 4. Patching UserFactory (Bypass Error Kelas Faker)
+      shell: |
+        cat << 'EOF' > /opt/parkir_bahy/database/factories/UserFactory.php
+        <?php
+        namespace Database\Factories;
+        use Illuminate\Database\Eloquent\Factories\Factory;
+        class UserFactory extends Factory {
+            public function definition(): array {
+                $r = rand(100, 999);
+                return ['name' => 'Bahy_'.$r, 'email' => 'bahy'.$r.'@test.com', 'password' => bcrypt('password')];
+            }
+        }
+        EOF
 
-    - name: 4. Build dan Jalankan Docker Compose (3 Replika Nginx)
-      shell: "bash -lc 'docker compose up -d --scale nginx_bahy=3 --build'"
-      args:
-        chdir: /opt/parkir_bahy
+    # FASE 4: DOCKER ORCHESTRATION (Indikator 2)
+    - name: 5. Build & Scaling Kontainer (3 Replika)
+      shell: "docker compose up -d --scale nginx_bahy=3 --build"
+      args: { chdir: /opt/parkir_bahy }
 
-    - name: 5. Copy file .env dari VM2 ke dalam Kontainer App
-      shell: "bash -lc 'docker cp /opt/parkir_bahy/.env parkir_bahy-app_bahy-1:/var/www/.env'"
-
-    - name: 6. Jalankan php artisan key:generate di Kontainer
-      shell: "bash -lc 'docker exec parkir_bahy-app_bahy-1 php artisan key:generate'"
-
-    - name: 7. Jeda 10 detik menunggu MySQL siap
-      pause:
-        seconds: 10
-
-    - name: 8. Jalankan Migrasi dan Seed Database
-      shell: "bash -lc 'docker exec parkir_bahy-app_bahy-1 php artisan migrate:fresh --seed'"
+    # FASE 5: FINALISASI DATABASE
+    - name: 6. Migrasi & Seed
+      shell: "docker exec parkir_bahy-app_bahy-1 php artisan migrate:fresh --seed"~
