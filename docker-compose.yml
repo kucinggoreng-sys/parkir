@@ -15,7 +15,7 @@ services:
       MYSQL_DATABASE: db_parkir_bahy
       MYSQL_ROOT_PASSWORD: rahasia_bahy
     volumes:
-      - ./parkir.sql:/docker-entrypoint-initdb.d/parkir.sql
+      - ./initdb:/docker-entrypoint-initdb.d
     networks:
       - parkir_net_bahy
 
@@ -23,10 +23,12 @@ services:
     image: nginx:latest
     restart: always
     ports:
-      - "8001-8003:80"
+      - "8001:80"
+      - "8002:80"
+      - "8003:80"
     volumes:
       - .:/var/www:ro
-      - ./nginx-bahy.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx-bahy.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - parkir_net_bahy
     depends_on:

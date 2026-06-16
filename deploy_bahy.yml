@@ -75,6 +75,17 @@
             }
         }
         EOF
+
+    - name: 5c. Buat folder untuk inisialisasi database
+      file:
+        path: /opt/parkir_bahy/initdb
+        state: directory
+
+    - name: 5d. Copy file SQL ke folder initdb
+      copy:
+        src: ./parkir.sql  # Pastikan file ini ada di folder tempat kamu menjalankan ansible
+        dest: /opt/parkir_bahy/initdb/parkir.sql
+
     # ====================================================================
     # FASE 3: ORKESTRASI DOCKER COMPOSE & SEEDING APPLICATION
     # ====================================================================
