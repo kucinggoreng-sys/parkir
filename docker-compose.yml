@@ -14,6 +14,8 @@ services:
     environment:
       MYSQL_DATABASE: db_parkir_bahy
       MYSQL_ROOT_PASSWORD: rahasia_bahy
+    volumes:
+      - ./parkir.sql:/docker-entrypoint-initdb.d/parkir.sql
     networks:
       - parkir_net_bahy
 

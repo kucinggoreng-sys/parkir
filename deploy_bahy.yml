@@ -1,42 +1,97 @@
 ---
-- name: Deployment Otomatis Bahy - SIJA Kelas XI
+- name: Deployment 100 Persen Otomatis Termasuk Instalasi Docker
   hosts: vm2
   become: yes
   tasks:
-    # FASE 1: INSTALASI
-    - name: 1. Update & Install Docker
-      apt: { name: [docker.io, docker-compose-v2], state: present, update_cache: yes }
 
-    # FASE 2: SETUP REPO
-    - name: 2. Clone Repository
+    # ====================================================================
+    # FASE 1: INSTALASI DOCKER DI VM 2
+    # ====================================================================
+    - name: 1. Update Repository dan Instal Docker + Docker Compose
+      apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+        state: present
+        update_cache: yes
+
+    - name: 2. Pastikan Layanan Docker Sudah Berjalan dan Aktif
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    # ====================================================================
+    # FASE 2: CLONE DAN CONFIG .ENV DI VM 2
+    # ====================================================================
+    - name: 3. Clone Repo Parkir dari GitHub ke VM 2
       git:
         repo: 'https://github.com/kucinggoreng-sys/parkir.git'
         dest: /opt/parkir_bahy
+        version: main
         force: yes
 
-    # FASE 3: KONFIGURASI OTOMATIS (Sesuai Indikator 1 & 2)
-    - name: 3. Setup .env
-      copy: { src: /opt/parkir_bahy/.env.example, dest: /opt/parkir_bahy/.env, remote_src: yes }
+    - name: 4. Copy .env.example menjadi .env di VM 2
+      copy:
+        src: /opt/parkir_bahy/.env.example
+        dest: /opt/parkir_bahy/.env
+        remote_src: yes
 
-    - name: 4. Patching UserFactory (Bypass Error Kelas Faker)
+    - name: 5. Konfigurasi Database di file .env VM 2
+      lineinfile:
+        path: /opt/parkir_bahy/.env
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^DB_HOST=', line: 'DB_HOST=db_bahy' }
+        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=db_parkir_bahy' }
+        - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD=rahasia_bahy' }
+
+    - name: 5b. Overwrite isi UserFactory menggunakan Native PHP (Bypass Faker Error)
       shell: |
         cat << 'EOF' > /opt/parkir_bahy/database/factories/UserFactory.php
         <?php
+
         namespace Database\Factories;
+
         use Illuminate\Database\Eloquent\Factories\Factory;
-        class UserFactory extends Factory {
-            public function definition(): array {
-                $r = rand(100, 999);
-                return ['name' => 'Bahy_'.$r, 'email' => 'bahy'.$r.'@test.com', 'password' => bcrypt('password')];
+        use Illuminate\Support\Str;
+        use Illuminate\Support\Facades\Hash;
+
+        class UserFactory extends Factory
+        {
+            protected static ?string $password;
+
+            public function definition(): array
+            {
+                $random = rand(100, 999);
+                return [
+                    'name' => 'User Bahy ' . $random,
+                    'email' => 'bahy.' . $random . '@example.com',
+                    'email_verified_at' => now(),
+                    'password' => static::$password ??= Hash::make('password'),
+                    'remember_token' => Str::random(10),
+                ];
             }
         }
         EOF
-
-    # FASE 4: DOCKER ORCHESTRATION (Indikator 2)
-    - name: 5. Build & Scaling Kontainer (3 Replika)
+    # ====================================================================
+    # FASE 3: ORKESTRASI DOCKER COMPOSE & SEEDING APPLICATION
+    # ====================================================================
+    - name: 6. Build dan Jalankan Docker Compose (3 Replika Nginx)
       shell: "docker compose up -d --scale nginx_bahy=3 --build"
-      args: { chdir: /opt/parkir_bahy }
+      args:
+        chdir: /opt/parkir_bahy
 
-    # FASE 5: FINALISASI DATABASE
-    - name: 6. Migrasi & Seed
-      shell: "docker exec parkir_bahy-app_bahy-1 php artisan migrate:fresh --seed"~
+    - name: 7. Copy file .env dari VM 2 ke dalam Kontainer App
+      shell: "docker cp /opt/parkir_bahy/.env parkir_bahy-app_bahy-1:/var/www/.env"
+
+    - name: 8. Jalankan php artisan key:generate di Kontainer
+      shell: "docker exec parkir_bahy-app_bahy-1 php artisan key:generate"
+
+    - name: 9. Jeda 30 detik menunggu MySQL siap menerima koneksi
+      pause:
+        seconds: 30
+
+    - name: 10. Jalankan Migrasi dan Seed Database
+      shell: "docker exec parkir_bahy-app_bahy-1 php artisan migrate:fresh --seed"
