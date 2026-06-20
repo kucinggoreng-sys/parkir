@@ -1,0 +1,114 @@
+---
+- name: Deployment Semoga Berhasil Ya Allah
+  hosts: vm2
+  become: yes
+  tasks:
+
+    - name: 1. Verifikasi Docker dan Docker Compose telah terinstall
+      shell: "docker --version && docker compose version"
+      register: docker_check
+      failed_when: false # Agar tidak error jika belum terinstall
+
+    - name: Fail jika Docker belum ada
+      fail:
+        msg: "Docker Engine/Compose belum terinstall di VM 2!"
+      when: docker_check.rc != 0
+
+    - name: 2. Pastikan direktori tujuan ada
+      file:
+        path: /var/www/laravel-bahy
+        state: directory
+
+    - name: 3. Transfer source code dari VM 1 (Controller) ke VM 2 (Target)
+      synchronize:
+        src: /asat/
+        dest: /var/www/laravel-bahy/
+        recursive: yes
+        delete: yes
+
+    - name: 4. Copy .env.example menjadi .env di VM 2
+      copy:
+        src: /var/www/laravel-bahy/.env.example
+        dest: /var/www/laravel-bahy/.env
+        remote_src: yes
+
+    - name: 5. Konfigurasi Database di file .env VM 2
+      lineinfile:
+        path: /var/www/laravel-bahy/.env
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^DB_HOST=', line: 'DB_HOST=db-bahy' }
+        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=db_parkir_bahy' }
+        - { regexp: '^DB_PASSWORD=', line: 'DB_PASSWORD=rahasia_bahy' }
+
+    - name: 5b. Overwrite isi UserFactory menggunakan Native PHP (Bypass Faker Error)
+      shell: |
+        cat << 'EOF' > /var/www/laravel-bahy/database/factories/UserFactory.php
+        <?php
+
+        namespace Database\Factories;
+
+        use Illuminate\Database\Eloquent\Factories\Factory;
+        use Illuminate\Support\Str;
+        use Illuminate\Support\Facades\Hash;
+
+        class UserFactory extends Factory
+        {
+            protected static ?string $password;
+
+            public function definition(): array
+            {
+                $random = rand(100, 999);
+                return [
+                    'name' => 'User Bahy ' . $random,
+                    'email' => 'bahy.' . $random . '@example.com',
+                    'email_verified_at' => now(),
+                    'password' => static::$password ??= Hash::make('password'),
+                    'remember_token' => Str::random(10),
+                ];
+            }
+        }
+        EOF
+
+    - name: 5c. Buat folder untuk inisialisasi database
+      file:
+        path: /var/www/laravel-bahy/initdb
+        state: directory
+
+    - name: 5d. Copy file SQL ke folder initdb
+      copy:
+        src: ./parkir.sql  # Pastikan file ini ada di folder tempat kamu menjalankan ansible
+        dest: /var/www/laravel-bahy/initdb/parkir.sql
+
+    - name: 6. Build dan Jalankan Docker Compose (3 Replika Nginx)
+      shell: "docker compose up -d --scale nginx_bahy=3 --build"
+      args:
+        chdir: /var/www/laravel-bahy
+
+    # Update Task 7 agar lebih stabil
+    - name: 7. Copy file .env ke dalam Kontainer
+      shell: "docker cp /var/www/laravel-bahy/.env web-bahy:/var/www/.env"
+
+    # Tambahkan task penting ini: Fix Permission
+    - name: 7b. Set permission agar Laravel bisa menulis log
+      shell: "docker exec web-bahy chown -R www-data:www-data /var/www/storage"
+
+    - name: 8. Jalankan php artisan key:generate di Kontainer
+      shell: "docker exec web-bahy php artisan key:generate"
+
+    - name: 9. Jeda 10 detik menunggu MySQL siap
+      pause:
+        seconds: 10
+
+    - name: 9b. Import parkir.sql ke database
+      shell: |
+        CONTAINER_ID=$(docker ps -qf "name=db-bahy")
+        docker exec -i $CONTAINER_ID mysql -uroot -p'rahasia_bahy' db_parkir_bahy < /var/www/laravel-bahy/initdb/parkir.sql || true
+      args:
+        chdir: /var/www/laravel-bahy
+
+    - name: 10. Jalankan Migrasi dan Seed Database
+      shell: "docker exec web-bahy php artisan migrate --force"
+      args:
+        chdir: /var/www/laravel-bahy

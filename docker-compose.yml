@@ -1,39 +1,40 @@
 version: '3.8'
 
 services:
-  app_bahy:
+  web-bahy:
+    container_name: web-bahy
     build: .
-    image: laravel_parkir_bahy
     restart: always
     networks:
-      - parkir_net_bahy
+      - asat-net
 
-  db_bahy:
+  db-bahy:
     image: mysql:8.0
     restart: always
     environment:
       MYSQL_DATABASE: db_parkir_bahy
       MYSQL_ROOT_PASSWORD: rahasia_bahy
     volumes:
+      - asat-vol:/var/lib/mysql
       - ./initdb:/docker-entrypoint-initdb.d
     networks:
-      - parkir_net_bahy
+      - asat-net
 
   nginx_bahy:
     image: nginx:latest
     restart: always
     ports:
-      - "8001:80"
-      - "8002:80"
-      - "8003:80"
+      - "8001-8003:80"
     volumes:
-      - .:/var/www:ro
+      - .:/var/www
       - ./nginx-bahy.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
-      - parkir_net_bahy
+      - asat-net
     depends_on:
-      - app_bahy
+      - web-bahy
 
 networks:
-  parkir_net_bahy:
+  asat-net:
     driver: bridge
+volumes:
+  asat-vol:

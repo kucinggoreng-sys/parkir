@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VM2_IP="192.168.100.12"
+VM2_IP="200.200.200.3"
 VM2_USER="hady"
 
 echo "======================================"
@@ -9,16 +9,16 @@ echo "======================================"
 
 # 1. Cek HAProxy
 if systemctl is-active --quiet haproxy; then
-    echo "HAProxy Service Lokal : [OK]"
+    echo "[OK] HAProxy Server Is RUNNING"
 else
-    echo "HAProxy Service Lokal : [CRITICAL]"
+    echo "[CRITICAL] HAProxy Server Is INACTIVE"
 fi
 
 # 2. Cek Ping ke VM2
 if ping -c 1 $VM2_IP &> /dev/null; then
-    echo "Konektivitas ke VM 2  : [OK]"
+    echo "[OK] VM2 Web Containers are REACHABLE"
 else
-    echo "Konektivitas ke VM 2  : [CRITICAL]"
+    echo "[CRITICAL] VM2 Web Containers are REACHABLE"
 fi
 
 # 3. Cek Jumlah Replika Kontainer
